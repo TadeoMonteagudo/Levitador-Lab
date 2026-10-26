@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratorio Remoto - Tubo Levitador Neumático IoT (UNLaM)</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for real-time plotting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Paho MQTT WebSocket Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* ESTILOS PERSONALIZADOS PARA LOS CÍRCULOS (THUMBS) DE LOS SLIDERS */
+        input[type=range].slider-sp::-webkit-slider-thumb {
+            background-color: #84cc16; /* Verde pistacho */
+        }
+        input[type=range].slider-sp::-moz-range-thumb {
+            background-color: #84cc16;
+        }
+
+        input[type=range].slider-kp::-webkit-slider-thumb {
+            background-color: #38bdf8; /* Celeste cielo */
+        }
+        input[type=range].slider-kp::-moz-range-thumb {
+            background-color: #38bdf8;
+        }
+
+        input[type=range].slider-ki::-webkit-slider-thumb {
+            background-color: #c084fc; /* Lila */
+        }
+        input[type=range].slider-ki::-moz-range-thumb {
+            background-color: #c084fc;
+        }
+
+        input[type=range].slider-kd::-webkit-slider-thumb {
+            background-color: #fde047; /* Amarillo manteca */
+        }
+        input[type=range].slider-kd::-moz-range-thumb {
+            background-color: #fde047;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col justify-between selection:bg-emerald-500 selection:text-slate-950">
+
+    <!-- TOP HEADER -->
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 px-4 py-3 shadow-md">
+        <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
+                    <i class="fa-solid fa-wind text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                        Tubo Levitador Neumático
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">IoT</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Técnicas Digitales IV — Universidad Nacional de La Matanza (UNLaM)</p>
+                </div>
+            </div>
+
+            <!-- STATUS INDICATORS -->
+            <div class="flex items-center gap-3 text-xs">
+                <!-- MQTT Connection Badge -->
+                <div id="mqtt-status-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
+                    <span id="mqtt-led" class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span id="mqtt-status-text">Desconectado</span>
+                </div>
+
+                <!-- Mode Indicator Badge -->
+                <div id="power-status-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-medium">
+                    <i class="fa-solid fa-bolt text-amber-400"></i>
+                    <span id="power-status-text">Bajo Consumo</span>
+                </div>
+
+                <!-- User Role Badge -->
+                <div id="role-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
+                    <i class="fa-solid fa-eye"></i>
+                    <span id="role-text">Modo: Espectador</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 flex-grow">
+
+        <!-- LEFT COLUMN: CONTROLS & TURN MANAGEMENT -->
+        <section class="space-y-6 flex flex-col">
+            
+            <!-- EXPERIMENT STATE TOGGLE -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-3">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h2 class="text-base font-semibold text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-power-off text-emerald-400"></i> Estado del Experimento
+                    </h2>
+                    <span id="exp-status-tag" class="text-xs font-mono px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
+                        Inactivo
+                    </span>
+                </div>
+                
+                <button id="btn-toggle-experiment" onclick="toggleExperimento()" disabled class="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-sm rounded-lg transition duration-200 shadow-lg flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-play"></i> Iniciar Experimento
+                </button>
+                <p class="text-xs text-slate-400">
+                    Habilita las lecturas y motores de la ESP32 en tiempo real saliendo del modo reposo.
+                </p>
+            </div>
+
+            <!-- PANEL DE TURNOS Y ROL -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h2 class="text-base font-semibold text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-user-gear text-emerald-400"></i> Gestor de Turno
+                    </h2>
+                    <span id="turn-timer" class="text-xs font-mono px-2 py-1 bg-slate-950 rounded text-slate-400 border border-slate-800">
+                        --:--
+                    </span>
+                </div>
+
+                <div id="turn-actions" class="space-y-2">
+                    <button id="btn-request-control" onclick="solicitarControl()" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-sm rounded-lg transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-hand"></i> Solicitar Control (30 min)
+                    </button>
+                    <button id="btn-release-control" onclick="cederTurno()" disabled class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-sm rounded-lg transition duration-200 border border-slate-700 opacity-50 cursor-not-allowed flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Ceder Control
+                    </button>
+                </div>
+
+                <p class="text-xs text-slate-400 leading-relaxed bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/80">
+                    <i class="fa-solid fa-circle-info text-emerald-400 me-1"></i>
+                    Inactividad máxima permitida: <strong>15 minutos</strong>.
+                </p>
+            </div>
+
+            <!-- PANEL DE CONTROL PID & SETPOINT -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-5">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h2 class="text-base font-semibold text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-emerald-400"></i> Parámetros del Control
+                    </h2>
+                    <span id="control-lock-icon" class="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        <i class="fa-solid fa-lock"></i> Bloqueado
+                    </span>
+                </div>
+
+                <!-- SETPOINT SECTION -->
+                <div class="space-y-2 bg-slate-950/40 p-3 rounded-lg border border-slate-800">
+                    <div class="flex justify-between items-center text-xs">
+                        <label for="slider-sp" class="font-medium text-slate-300">Altura Consigna (SP)</label>
+                        <div class="flex items-center gap-1">
+                            <input type="number" id="input-sp" value="20.0" min="5" max="45" step="0.5" disabled
+                                class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[#84cc16] font-mono text-right text-xs disabled:opacity-50"
+                                oninput="sincronizarInputSlider('sp')">
+                            <span class="text-slate-400">cm</span>
+                        </div>
+                    </div>
+                    <input type="range" id="slider-sp" min="5" max="45" step="0.5" value="20" disabled
+                        class="w-full h-2 bg-slate-900 rounded-lg appearance-none border border-slate-800 disabled:opacity-50 slider-sp"
+                        oninput="sincronizarSliderInput('sp')">
+                    <button id="btn-enviar-sp" onclick="enviarSetpointManual()" disabled
+                        class="w-full mt-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded transition shadow disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                        Enviar Setpoint
+                    </button>
+                </div>
+
+                <!-- KP SECTION -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between items-center text-xs">
+                        <label for="slider-kp" class="font-medium text-slate-300">Kp (Proporcional)</label>
+                        <input type="number" id="input-kp" value="2.0" min="0" max="10" step="0.1" disabled
+                            class="w-16 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-[#38bdf8] font-mono text-right text-xs disabled:opacity-50"
+                            oninput="sincronizarInputSlider('kp')">
+                    </div>
+                    <input type="range" id="slider-kp" min="0" max="10" step="0.1" value="2.0" disabled
+                        class="w-full h-2 bg-slate-950 rounded-lg appearance-none border border-slate-800 disabled:opacity-50 slider-kp"
+                        oninput="sincronizarSliderInput('kp')">
+                </div>
+
+                <!-- KI SECTION -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between items-center text-xs">
+                        <label for="slider-ki" class="font-medium text-slate-300">Ki (Integral)</label>
+                        <input type="number" id="input-ki" value="0.5" min="0" max="5" step="0.05" disabled
+                            class="w-16 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-[#c084fc] font-mono text-right text-xs disabled:opacity-50"
+                            oninput="sincronizarInputSlider('ki')">
+                    </div>
+                    <input type="range" id="slider-ki" min="0" max="5" step="0.05" value="0.5" disabled
+                        class="w-full h-2 bg-slate-950 rounded-lg appearance-none border border-slate-800 disabled:opacity-50 slider-ki"
+                        oninput="sincronizarSliderInput('ki')">
+                </div>
+
+                <!-- KD SECTION -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between items-center text-xs">
+                        <label for="slider-kd" class="font-medium text-slate-300">Kd (Derivativo)</label>
+                        <input type="number" id="input-kd" value="0.1" min="0" max="2" step="0.01" disabled
+                            class="w-16 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-[#fde047] font-mono text-right text-xs disabled:opacity-50"
+                            oninput="sincronizarInputSlider('kd')">
+                    </div>
+                    <input type="range" id="slider-kd" min="0" max="2" step="0.01" value="0.1" disabled
+                        class="w-full h-2 bg-slate-950 rounded-lg appearance-none border border-slate-800 disabled:opacity-50 slider-kd"
+                        oninput="sincronizarSliderInput('kd')">
+                </div>
+
+                <!-- BOTÓN ENVIAR VALORES K (PID) -->
+                <button id="btn-enviar-pid" onclick="enviarPIDManual()" disabled
+                    class="w-full py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition shadow disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-paper-plane"></i> Enviar Parámetros PID (Kp, Ki, Kd)
+                </button>
+
+                <!-- PRESETS QUICK BUTTONS -->
+                <div class="pt-2 border-t border-slate-800/80">
+                    <label class="block text-xs font-medium text-slate-400 mb-2">Modos Preconfigurados (Sintonía):</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="btn-preset-suave" onclick="aplicarPreset(1.5, 0.2, 0.05)" disabled class="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 text-xs rounded border border-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 transition cursor-pointer">
+                            🍃 Suave
+                        </button>
+                        <button id="btn-preset-agresivo" onclick="aplicarPreset(3.5, 0.8, 0.25)" disabled class="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 text-xs rounded border border-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 transition cursor-pointer">
+                            ⚡ Agresivo
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT COLUMN: TELEMETRY & MULTI-CHART DISPLAY -->
+        <section class="lg:col-span-2 space-y-6 flex flex-col justify-between">
+
+            <!-- METRIC CARDS -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-md flex flex-col justify-between">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Altura (PV)</span>
+                    <span id="metric-pv" class="text-xl font-bold font-mono text-emerald-400">0.0 <span class="text-xs font-sans text-slate-400">cm</span></span>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-md flex flex-col justify-between">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Potencia</span>
+                    <span id="metric-pwm" class="text-xl font-bold font-mono text-blue-400">0.0 <span class="text-xs font-sans text-slate-400">%</span></span>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-md flex flex-col justify-between">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Motor RPM</span>
+                    <span id="metric-rpm" class="text-xl font-bold font-mono text-cyan-400">0 <span class="text-xs font-sans text-slate-400">RPM</span></span>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-md flex flex-col justify-between">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Velocidad</span>
+                    <span id="metric-vel" class="text-xl font-bold font-mono text-amber-400">0.0 <span class="text-xs font-sans text-slate-400">cm/s</span></span>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-md flex flex-col justify-between">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Aceleración</span>
+                    <span id="metric-acc" class="text-xl font-bold font-mono text-rose-400">0.0 <span class="text-xs font-sans text-slate-400">cm/s²</span></span>
+                </div>
+            </div>
+
+            <!-- DYNAMIC CHARTS -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex-grow flex flex-col justify-between space-y-4 min-h-[420px]">
+                <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-3 gap-2">
+                    <h2 class="text-base font-semibold text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-line text-emerald-400"></i> Telemetría en Tiempo Real
+                    </h2>
+                    
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportarCSV()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center gap-2 shadow-sm cursor-pointer">
+                            <i class="fa-solid fa-download text-emerald-400"></i> Exportar Datos (.csv)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- CHART 1: POSICIÓN Y SETPOINT -->
+                <div class="relative w-full h-44 flex-grow">
+                    <canvas id="positionChart"></canvas>
+                </div>
+
+                <!-- CHART 2: RPM Y VELOCIDAD -->
+                <div class="relative w-full h-44 flex-grow border-t border-slate-800/80 pt-2">
+                    <canvas id="dynamicsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- TABLA RESUMEN -->
+            <div id="summary-table-card" class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-3">
+                <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <i class="fa-solid fa-table text-emerald-400"></i> Resumen de Datos Registrados
+                </h3>
+                <div class="overflow-x-auto max-h-48">
+                    <table class="w-full text-left text-xs text-slate-400">
+                        <thead class="bg-slate-950 text-slate-300 font-mono text-[11px] uppercase border-b border-slate-800">
+                            <tr>
+                                <th class="p-2">Tiempo</th>
+                                <th class="p-2">PV (cm)</th>
+                                <th class="p-2">SP (cm)</th>
+                                <th class="p-2">PWM (%)</th>
+                                <th class="p-2">RPM</th>
+                                <th class="p-2">Kp/Ki/Kd</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summary-table-body" class="divide-y divide-slate-800/60 font-mono">
+                            <tr>
+                                <td colspan="6" class="p-3 text-center text-slate-600">Inicie un experimento para registrar lecturas en la tabla...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL DE INACTIVIDAD -->
+    <div id="modal-inactividad" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div class="flex items-center gap-3 text-amber-400">
+                <i class="fa-solid fa-triangle-exclamation text-3xl"></i>
+                <h3 class="text-lg font-bold text-white">¿Sigues ahí?</h3>
+            </div>
+            <p class="text-sm text-slate-300">
+                Inactividad detectada. El control se cederá en <span id="modal-timer" class="font-bold font-mono text-amber-400">30</span> segundos.
+            </p>
+            <div class="pt-2">
+                <button onclick="renovarActividad()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition shadow-lg cursor-pointer">
+                    Mantener Control
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="bg-slate-900 border-t border-slate-800 px-4 py-3 text-center text-xs text-slate-500">
+        <p>Proyecto Integrador Técnicas Digitales IV — UNLaM 2026. Conexión vía MQTT / HiveMQ WebSockets Broker.</p>
+    </footer>
+
+    <!-- JAVASCRIPT APP LOGIC -->
+    <script>
+        const BROKER = "broker.hivemq.com";
+        const PORT = 8884;
+        const TOPIC_SUB_TELEMETRY = "esp32/datos";
+        const TOPIC_PUB_COMMANDS = "esp32/ordenes";
+        const TOPIC_GESTION_TURNO = "esp32/turno";
+
+        let client = null;
+        const myClientId = 'client_' + Math.random().toString(16).substr(2, 8);
+
+        // ESTADOS DE CONTROL Y TIMERS
+        let esControlador = false;
+        let experimentoActivo = false;
+        let timerTurnoMax = null;
+        let tiempoRestanteTurno = 30 * 60;
+        let tiempoInactividad = 15 * 60; // 15 minutos de inactividad
+        let debounceTimer = null;
+
+        // HISTORIAL DE DATOS
+        let dataHistory = [];
+        let prevPv = null;
+        let prevVel = 0;
+        let prevTimestamp = null;
+
+        let posChart = null;
+        let dynChart = null;
+
+        // INICIALIZACIÓN DE GRÁFICOS Y CONEXIÓN
+        window.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            conectarMQTT();
+            iniciarWatcherInactividad();
+        });
+
+        function initCharts() {
+            const ctxPos = document.getElementById('positionChart').getContext('2d');
+            posChart = new Chart(ctxPos, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Setpoint (cm)', borderColor: '#10b981', borderWidth: 2, borderDash: [4, 4], data: [], pointRadius: 0 },
+                        { label: 'Posición PV (cm)', borderColor: '#60a5fa', borderWidth: 2, data: [], tension: 0.25, pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    scales: {
+                        x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', maxTicksLimit: 6 } },
+                        y: { min: 0, max: 50, grid: { color: '#1e293b' }, ticks: { color: '#64748b' } }
+                    },
+                    plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } }
+                }
+            });
+
+            const ctxDyn = document.getElementById('dynamicsChart').getContext('2d');
+            dynChart = new Chart(ctxDyn, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Motor RPM', borderColor: '#22d3ee', borderWidth: 1.5, data: [], yAxisID: 'yRPM', pointRadius: 0 },
+                        { label: 'Velocidad (cm/s)', borderColor: '#f59e0b', borderWidth: 1.5, data: [], yAxisID: 'yVel', pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    scales: {
+                        x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', maxTicksLimit: 6 } },
+                        yRPM: { type: 'linear', position: 'left', min: 0, max: 4000, grid: { color: '#1e293b' }, ticks: { color: '#22d3ee' } },
+                        yVel: { type: 'linear', position: 'right', min: -50, max: 50, grid: { drawOnChartArea: false }, ticks: { color: '#f59e0b' } }
+                    },
+                    plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } }
+                }
+            });
+        }
+
+        function conectarMQTT() {
+            const clientId = "web_client_" + Math.random().toString(16).substr(2, 8);
+            client = new Paho.MQTT.Client(BROKER, PORT, clientId);
+
+            client.onConnectionLost = function(responseObject) {
+                if (responseObject.errorCode !== 0) {
+                    console.log("Conexión perdida: " + responseObject.errorMessage);
+                }
+                actualizarEstadoMQTT(false);
+                setTimeout(conectarMQTT, 3000);
+            };
+
+            client.onMessageArrived = function(message) {
+                try {
+                    if (message.destinationName === TOPIC_SUB_TELEMETRY) {
+                        procesarTelemetria(message.payloadString);
+                    } else if (message.destinationName === TOPIC_GESTION_TURNO) {
+                        const dataTurno = JSON.parse(message.payloadString);
+                        if (dataTurno.accion === 'TOMAR' && dataTurno.clientId !== myClientId) {
+                            if (esControlador) {
+                                cederTurno();
+                                alert("Otro usuario ha tomado el control del laboratorio.");
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error al procesar mensaje MQTT:", e);
+                }
+            };
+
+            console.log("Conectando al broker MQTT por WebSockets seguros...");
+            client.connect({
+                useSSL: true,
+                onSuccess: function() {
+                    console.log("¡Conectado exitosamente al broker!");
+                    actualizarEstadoMQTT(true);
+                    client.subscribe(TOPIC_SUB_TELEMETRY);
+                    client.subscribe(TOPIC_GESTION_TURNO);
+                },
+                onFailure: function(message) {
+                    console.error("Fallo de conexión MQTT: " + message.errorMessage);
+                    actualizarEstadoMQTT(false);
+                }
+            });
+        }
+
+        function actualizarEstadoMQTT(conectado) {
+            const badge = document.getElementById('mqtt-status-badge');
+            const led = document.getElementById('mqtt-led');
+            const text = document.getElementById('mqtt-status-text');
+
+            if (!badge || !led || !text) return;
+
+            if (conectado) {
+                badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium';
+                led.className = 'w-2 h-2 rounded-full bg-emerald-500';
+                text.innerText = 'Conectado';
+            } else {
+                badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium';
+                led.className = 'w-2 h-2 rounded-full bg-rose-500 animate-pulse';
+                text.innerText = 'Desconectado';
+            }
+        }
+
+        // SINCRONIZACIÓN Y DEBOUNCE (300ms)
+        function sincronizarSliderInput(param) {
+            const sliderVal = document.getElementById(`slider-${param}`).value;
+            document.getElementById(`input-${param}`).value = sliderVal;
+            programarEnvioAutomatico();
+        }
+
+        function sincronizarInputSlider(param) {
+            const inputVal = document.getElementById(`input-${param}`).value;
+            document.getElementById(`slider-${param}`).value = inputVal;
+            programarEnvioAutomatico();
+        }
+
+        function programarEnvioAutomatico() {
+            if (!esControlador) return;
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                enviarPayloadCompleto();
+            }, 300);
+        }
+
+        function enviarSetpointManual() {
+            if (!esControlador) return;
+            clearTimeout(debounceTimer);
+            enviarPayloadCompleto();
+        }
+
+        function enviarPIDManual() {
+            if (!esControlador) return;
+            clearTimeout(debounceTimer);
+            enviarPayloadCompleto();
+        }
+
+        function enviarPayloadCompleto(extraPayload = {}) {
+            const sp = parseFloat(document.getElementById('input-sp').value);
+            const kp = parseFloat(document.getElementById('input-kp').value);
+            const ki = parseFloat(document.getElementById('input-ki').value);
+            const kd = parseFloat(document.getElementById('input-kd').value);
+
+            publicarMQTT({ sp, kp, ki, kd, ...extraPayload });
+        }
+
+        function publicarMQTT(obj) {
+            if (!client || !client.isConnected()) {
+                console.warn("No hay conexión MQTT activa para enviar comandos.");
+                return;
+            }
+            const message = new Paho.MQTT.Message(JSON.stringify(obj));
+            message.destinationName = TOPIC_PUB_COMMANDS;
+            client.send(message);
+            renovarActividad();
+        }
+
+        function toggleExperimento() {
+            if (!esControlador) return;
+
+            experimentoActivo = !experimentoActivo;
+            const btn = document.getElementById('btn-toggle-experiment');
+            const tag = document.getElementById('exp-status-tag');
+            const pBadge = document.getElementById('power-status-badge');
+            const pText = document.getElementById('power-status-text');
+
+            if (experimentoActivo) {
+                btn.className = 'w-full py-3 px-4 bg-rose-600 hover:bg-rose-500 text-slate-950 font-bold text-sm rounded-lg transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer';
+                btn.innerHTML = '<i class="fa-solid fa-stop"></i> Finalizar Experimento';
+                tag.innerText = 'En Curso';
+                tag.className = 'text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                pBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium';
+                pText.innerText = 'Modo Normal Activo';
+
+                enviarPayloadCompleto({ modo: 'RUN' });
+            } else {
+                btn.className = 'w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-sm rounded-lg transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer';
+                btn.innerHTML = '<i class="fa-solid fa-play"></i> Iniciar Experimento';
+                tag.innerText = 'Finalizado';
+                tag.className = 'text-xs font-mono px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800';
+                pBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-medium';
+                pText.innerText = 'Bajo Consumo';
+
+                enviarPayloadCompleto({ modo: 'LOW_POWER' });
+            }
+        }
+
+        function procesarTelemetria(jsonStr) {
+            try {
+                const data = JSON.parse(jsonStr);
+                const now = new Date();
+                const timeLabel = now.toTimeString().split(' ')[0];
+
+                const pv = data.pv !== undefined ? parseFloat(data.pv) : 0;
+                const sp = data.sp !== undefined ? parseFloat(data.sp) : 0;
+                const pwm = data.pwm !== undefined ? parseFloat(data.pwm) : 0;
+                const rpm = data.rpm !== undefined ? parseFloat(data.rpm) : Math.round((pwm / 100.0) * 3500);
+
+                let vel = 0;
+                let acc = 0;
+                if (prevTimestamp !== null) {
+                    const dt = (now - prevTimestamp) / 1000.0;
+                    if (dt > 0) {
+                        vel = (pv - prevPv) / dt;
+                        acc = (vel - prevVel) / dt;
+                    }
+                }
+
+                prevPv = pv;
+                prevVel = vel;
+                prevTimestamp = now;
+
+                document.getElementById('metric-pv').innerHTML = `${pv.toFixed(1)} <span class="text-xs font-sans text-slate-400">cm</span>`;
+                document.getElementById('metric-pwm').innerHTML = `${pwm.toFixed(0)} <span class="text-xs font-sans text-slate-400">%</span>`;
+                document.getElementById('metric-rpm').innerHTML = `${rpm} <span class="text-xs font-sans text-slate-400">RPM</span>`;
+                document.getElementById('metric-vel').innerHTML = `${vel.toFixed(1)} <span class="text-xs font-sans text-slate-400">cm/s</span>`;
+                document.getElementById('metric-acc').innerHTML = `${acc.toFixed(1)} <span class="text-xs font-sans text-slate-400">cm/s²</span>`;
+
+                if (experimentoActivo) {
+                    const record = {
+                        fecha: now.toISOString(),
+                        hora: timeLabel,
+                        pv: pv.toFixed(2),
+                        sp: sp.toFixed(2),
+                        pwm: pwm.toFixed(1),
+                        rpm: rpm,
+                        vel: vel.toFixed(2),
+                        acc: acc.toFixed(2),
+                        kp: document.getElementById('input-kp').value,
+                        ki: document.getElementById('input-ki').value,
+                        kd: document.getElementById('input-kd').value
+                    };
+                    dataHistory.push(record);
+                    if (dataHistory.length > 3600) dataHistory.shift();
+                    actualizarTablaResumen();
+                }
+
+                if (posChart && posChart.data) {
+                    if (posChart.data.labels.length > 30) {
+                        posChart.data.labels.shift();
+                        posChart.data.datasets[0].data.shift();
+                        posChart.data.datasets[1].data.shift();
+
+                        dynChart.data.labels.shift();
+                        dynChart.data.datasets[0].data.shift();
+                        dynChart.data.datasets[1].data.shift();
+                    }
+
+                    posChart.data.labels.push(timeLabel);
+                    posChart.data.datasets[0].data.push(sp);
+                    posChart.data.datasets[1].data.push(pv);
+                    posChart.update('none');
+
+                    dynChart.data.labels.push(timeLabel);
+                    dynChart.data.datasets[0].data.push(rpm);
+                    dynChart.data.datasets[1].data.push(vel);
+                    dynChart.update('none');
+                }
+
+            } catch (e) {
+                console.warn('Formato de datos no válido:', e);
+            }
+        }
+
+        function aplicarPreset(kp, ki, kd) {
+            if (!esControlador) return;
+            document.getElementById('slider-kp').value = kp;
+            document.getElementById('input-kp').value = kp;
+            document.getElementById('slider-ki').value = ki;
+            document.getElementById('input-ki').value = ki;
+            document.getElementById('slider-kd').value = kd;
+            document.getElementById('input-kd').value = kd;
+            enviarPayloadCompleto();
+        }
+
+        function solicitarControl() {
+            if (client && client.isConnected()) {
+                const mensajeTurno = new Paho.MQTT.Message(JSON.stringify({ accion: 'TOMAR', clientId: myClientId }));
+                mensajeTurno.destinationName = TOPIC_GESTION_TURNO;
+                mensajeTurno.retained = true;
+                client.send(mensajeTurno);
+            }
+
+            esControlador = true;
+            toggleBloqueoControles(false);
+
+            document.getElementById('role-badge').className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium';
+            document.getElementById('role-text').innerText = 'Modo: Controlador Activo';
+
+            document.getElementById('btn-request-control').disabled = true;
+            document.getElementById('btn-request-control').className = 'w-full py-2.5 px-4 bg-slate-800 text-slate-500 font-bold text-sm rounded-lg border border-slate-700 opacity-50 cursor-not-allowed flex items-center justify-center gap-2';
+            
+            document.getElementById('btn-release-control').disabled = false;
+            document.getElementById('btn-release-control').className = 'w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-500 text-slate-950 font-bold text-sm rounded-lg transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer';
+
+            document.getElementById('btn-toggle-experiment').disabled = false;
+            document.getElementById('btn-enviar-sp').disabled = false;
+            document.getElementById('btn-enviar-pid').disabled = false;
+
+            document.getElementById('control-lock-icon').innerHTML = '<i class="fa-solid fa-lock-open"></i> Desbloqueado';
+            document.getElementById('control-lock-icon').className = 'text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20';
+
+            iniciarTimerTurno();
+            tiempoInactividad = 15 * 60; // Reinicia a 15 min al tomar control
+        }
+
+        function cederTurno() {
+            if (experimentoActivo) {
+                toggleExperimento();
+            }
+
+            if (client && client.isConnected()) {
+                const mensajeTurno = new Paho.MQTT.Message(JSON.stringify({ accion: 'LIBERAR', clientId: myClientId }));
+                mensajeTurno.destinationName = TOPIC_GESTION_TURNO;
+                mensajeTurno.retained = true;
+                client.send(mensajeTurno);
+            }
+
+            esControlador = false;
+            toggleBloqueoControles(true);
+
+            document.getElementById('role-badge').className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium';
+            document.getElementById('role-text').innerText = 'Modo: Espectador';
+
+            document.getElementById('btn-request-control').disabled = false;
+            document.getElementById('btn-request-control').className = 'w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-sm rounded-lg transition duration-200 shadow-lg flex items-center justify-center gap-2 cursor-pointer';
+            
+            document.getElementById('btn-release-control').disabled = true;
+            document.getElementById('btn-release-control').className = 'w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-sm rounded-lg transition duration-200 border border-slate-700 opacity-50 cursor-not-allowed flex items-center justify-center gap-2';
+
+            document.getElementById('btn-toggle-experiment').disabled = true;
+            document.getElementById('btn-enviar-sp').disabled = true;
+            document.getElementById('btn-enviar-pid').disabled = true;
+
+            document.getElementById('control-lock-icon').innerHTML = '<i class="fa-solid fa-lock"></i> Bloqueado';
+            document.getElementById('control-lock-icon').className = 'text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20';
+
+            clearInterval(timerTurnoMax);
+            document.getElementById('turn-timer').innerText = '--:--';
+        }
+
+        function toggleBloqueoControles(bloquear) {
+            ['sp', 'kp', 'ki', 'kd'].forEach(p => {
+                const slider = document.getElementById(`slider-${p}`);
+                const input = document.getElementById(`input-${p}`);
+                slider.disabled = bloquear;
+                input.disabled = bloquear;
+
+                if (bloquear) {
+                    slider.className = `w-full h-2 bg-slate-950 rounded-lg appearance-none opacity-50 cursor-not-allowed border border-slate-800 slider-${p}`;
+                    input.className = `w-16 bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 font-mono text-right text-xs opacity-50 cursor-not-allowed`;
+                } else {
+                    slider.className = `w-full h-2 bg-slate-950 rounded-lg appearance-none cursor-pointer border border-slate-800 slider-${p}`;
+                    input.className = `w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 font-mono text-right text-xs cursor-text`;
+                }
+            });
+
+            document.getElementById('btn-preset-suave').disabled = bloquear;
+            document.getElementById('btn-preset-agresivo').disabled = bloquear;
+        }
+
+        function iniciarTimerTurno() {
+            tiempoRestanteTurno = 30 * 60;
+            clearInterval(timerTurnoMax);
+            timerTurnoMax = setInterval(() => {
+                tiempoRestanteTurno--;
+                const min = Math.floor(tiempoRestanteTurno / 60);
+                const sec = tiempoRestanteTurno % 60;
+                document.getElementById('turn-timer').innerText = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+
+                if (tiempoRestanteTurno <= 0) {
+                    cederTurno();
+                    alert("Tu turno de 30 minutos ha finalizado.");
+                }
+            }, 1000);
+        }
+
+        function iniciarWatcherInactividad() {
+            setInterval(() => {
+                if (!esControlador) return;
+                tiempoInactividad--;
+                if (tiempoInactividad === 30) {
+                    document.getElementById('modal-inactividad').classList.remove('hidden');
+                    let modalSec = 30;
+                    const mTimer = document.getElementById('modal-timer');
+                    const modalInterval = setInterval(() => {
+                        modalSec--;
+                        mTimer.innerText = modalSec;
+                        if (modalSec <= 0 || !esControlador) {
+                            clearInterval(modalInterval);
+                            document.getElementById('modal-inactividad').classList.add('hidden');
+                            if (esControlador) cederTurno();
+                        }
+                    }, 1000);
+                }
+            }, 1000);
+        }
+
+        function renovarActividad() {
+            tiempoInactividad = 15 * 60; // Renueva a 15 minutos
+            document.getElementById('modal-inactividad').classList.add('hidden');
+        }
+
+        function actualizarTablaResumen() {
+            const tbody = document.getElementById('summary-table-body');
+            if (dataHistory.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-3 text-center text-slate-600">No hay datos registrados en este experimento.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            const muestra = dataHistory.slice(-50).reverse();
+            muestra.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="p-2">${r.hora}</td>
+                    <td class="p-2 text-emerald-400">${r.pv}</td>
+                    <td class="p-2 text-amber-400">${r.sp}</td>
+                    <td class="p-2 text-blue-400">${r.pwm}</td>
+                    <td class="p-2 text-cyan-400">${r.rpm}</td>
+                    <td class="p-2 text-slate-300">${r.kp || '-'}/${r.ki || '-'}/${r.kd || '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function exportarCSV() {
+            if (dataHistory.length === 0) {
+                alert("No hay datos registrados para exportar.");
+                return;
+            }
+
+            let csvContent = "\uFEFFsep=;\r\nHora;PV_cm;SP_cm;PWM_pct;RPM;Vel_cm_s;Acc_cm_s2;Kp;Ki;Kd\r\n";
+            dataHistory.forEach(r => {
+                const pvFmt = r.pv.toString().replace('.', ',');
+                const spFmt = r.sp.toString().replace('.', ',');
+                const pwmFmt = r.pwm.toString().replace('.', ',');
+                const velFmt = r.vel.toString().replace('.', ',');
+                const accFmt = r.acc.toString().replace('.', ',');
+                const kpFmt = r.kp.toString().replace('.', ',');
+                const kiFmt = r.ki.toString().replace('.', ',');
+                const kdFmt = r.kd.toString().replace('.', ',');
+
+                csvContent += `${r.hora};${pvFmt};${spFmt};${pwmFmt};${r.rpm};${velFmt};${accFmt};${kpFmt};${kiFmt};${kdFmt}\r\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `levitador_telemetria_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
